@@ -80,6 +80,8 @@ static func configure(
 
 	var existing_config: Variant = null
 	var lines := _split_lines(String(read["data"]))
+	if not _is_blank_or_comment_lines(lines) and not _has_top_level_patch_row(lines):
+		return {"status": "error", "message": "Refusing to append to %s: DeepSeek Harness patch files must be a top-level YAML sequence. Fix or move the file, then re-run Configure." % path}
 	var found := _find_entry_block(lines, entry_id(server_name), true)
 	if found.is_empty():
 		var plain := _find_entry_block(lines, entry_id(server_name), false)
@@ -93,7 +95,10 @@ static func configure(
 		## toolCallTimeoutMs, reconnect) survive a reconfigure.
 		existing_config = _extract_config(lines, found)
 	var new_entry := build_entry(client, server_name, server_url, existing_config, launch)
-	var rendered := render_nested_entry(entry_id(server_name), new_entry)
+	var render_indent := ENTRY_INDENT
+	if not found.is_empty() and _indent_of(lines[int(found.get("start", 0))]) > 0:
+		render_indent = _indent_of(lines[int(found.get("start", 0))])
+	var rendered := render_nested_entry(entry_id(server_name), new_entry, render_indent)
 	var out := ""
 	if found.is_empty():
 		out = _append_row(lines, rendered)
@@ -290,14 +295,14 @@ static func render_insert_row(entry_id_value: String, config: Dictionary) -> Pac
 
 ## Render one nested loader entry (the `- id:` block inside an `insert`
 ## list) at the 4-space base indent used by the shipped patch files.
-static func render_nested_entry(entry_id_value: String, config: Dictionary) -> PackedStringArray:
+static func render_nested_entry(entry_id_value: String, config: Dictionary, base_indent: int = ENTRY_INDENT) -> PackedStringArray:
 	var lines: PackedStringArray = []
-	var base := _indent_str(ENTRY_INDENT)
+	var base := _indent_str(base_indent)
 	lines.append("%s- id: %s" % [base, entry_id_value])
-	lines.append("%sname: '%s'" % [_indent_str(FIELD_INDENT), PLUGIN_NAME])
-	lines.append("%sconfig:" % _indent_str(FIELD_INDENT))
+	lines.append("%sname: '%s'" % [_indent_str(base_indent + 2), PLUGIN_NAME])
+	lines.append("%sconfig:" % _indent_str(base_indent + 2))
 	for key in config:
-		lines.append_array(_emit_field(String(key), config[key], NESTED_FIELD_INDENT))
+		lines.append_array(_emit_field(String(key), config[key], base_indent + 4))
 	return lines
 
 
@@ -352,6 +357,7 @@ static func _find_entry_block(lines: PackedStringArray, entry_id_value: String, 
 		if parsed.is_empty() or parsed.get("id") != entry_id_value:
 			continue
 		var j := i + 1
+		var last_content := i
 		while j < lines.size():
 			var l := lines[j]
 			if _is_blank_or_comment(l):
@@ -359,8 +365,9 @@ static func _find_entry_block(lines: PackedStringArray, entry_id_value: String, 
 				continue
 			if _indent_of(l) <= indent:
 				break
+			last_content = j
 			j += 1
-		return {"start": i, "end": j}
+		return {"start": i, "end": last_content + 1}
 	return {}
 
 
@@ -582,6 +589,20 @@ static func _is_blank_or_comment_only(text: String) -> bool:
 		if not stripped.is_empty() and not stripped.begins_with("#"):
 			return false
 	return true
+
+
+static func _is_blank_or_comment_lines(lines: PackedStringArray) -> bool:
+	for line in lines:
+		if not _is_blank_or_comment(line):
+			return false
+	return true
+
+
+static func _has_top_level_patch_row(lines: PackedStringArray) -> bool:
+	for line in lines:
+		if _indent_of(line) == 0 and line.strip_edges().begins_with("- "):
+			return true
+	return false
 
 
 static func _join_lines(parts: Array) -> String:

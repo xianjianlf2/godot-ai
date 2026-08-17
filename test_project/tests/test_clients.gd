@@ -3261,7 +3261,7 @@ func test_hermes_is_in_required_registry_check() -> void:
 	assert_true(McpClientRegistry.has_id("hermes"), "hermes client must be in registry")
 
 
-func _hermes_scratch_path(filename: String) -> String:
+func _tmp_scratch_path(filename: String) -> String:
 	var dir := OS.get_environment("TMPDIR")
 	if dir.is_empty():
 		dir = OS.get_environment("TEMP")
@@ -3274,7 +3274,7 @@ func test_hermes_yaml_roundtrips_through_configure() -> void:
 	## End-to-end: a configure write must produce YAML Hermes can read back
 	## as CONFIGURED, preserving other top-level keys in the user's file.
 	var c := McpClientRegistry.get_by_id("hermes")
-	var path := _hermes_scratch_path("godot_ai_hermes_rt.yaml")
+	var path := _tmp_scratch_path("godot_ai_hermes_rt.yaml")
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
 	# Seed a config.yaml with an unrelated top-level key.
@@ -3316,7 +3316,7 @@ func test_hermes_yaml_empty_block_does_not_swallow_sibling_key() -> void:
 	## as a server entry — that would re-emit `model:` nested under
 	## mcp_servers on rewrite and corrupt the user's config.
 	var c := McpClientRegistry.get_by_id("hermes")
-	var path := _hermes_scratch_path("godot_ai_hermes_empty_block.yaml")
+	var path := _tmp_scratch_path("godot_ai_hermes_empty_block.yaml")
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -3349,7 +3349,7 @@ func test_hermes_yaml_comments_in_block_are_not_parsed_as_entries() -> void:
 	## headers or keys (a `# note` entry would be re-emitted as a bogus
 	## `# note:` server on rewrite).
 	var c := McpClientRegistry.get_by_id("hermes")
-	var path := _hermes_scratch_path("godot_ai_hermes_comments.yaml")
+	var path := _tmp_scratch_path("godot_ai_hermes_comments.yaml")
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -3410,7 +3410,7 @@ func test_hermes_yaml_command_args_round_trip_through_flow_parser() -> void:
 	## including items carrying quotes, spaces, and backslashes (the Windows
 	## pythonw -c bootstrap) — or verification would drift on every refresh.
 	var c := McpClientRegistry.get_by_id("hermes")
-	var path := _hermes_scratch_path("godot_ai_hermes_flow_args.yaml")
+	var path := _tmp_scratch_path("godot_ai_hermes_flow_args.yaml")
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
 	var launch := {
@@ -3475,7 +3475,7 @@ func test_dsh_strategy_round_trip() -> void:
 	## End-to-end: a configure write must produce an `insert` row the dsh
 	## loader composes (verified live via `dsh --profile web --dump-config`),
 	## read back as CONFIGURED, and remove back to NOT_CONFIGURED.
-	var c := _make_test_dsh_client(_dsh_scratch_path("godot_ai_dsh_rt.yaml"))
+	var c := _make_test_dsh_client(_tmp_scratch_path("godot_ai_dsh_rt.yaml"))
 	var path := String(c.path_template["unix"])
 	_remove_if_exists(path)
 	var launch := _test_attach_launch()
@@ -3508,7 +3508,7 @@ func test_dsh_strategy_preserves_other_rows() -> void:
 	## The home patch file may already carry the user's own insert rows,
 	## override rows, and comments. Configure/remove must touch only our
 	## entry's lines and leave everything else byte-for-byte intact.
-	var path := _dsh_scratch_path("godot_ai_dsh_preserve.yaml")
+	var path := _tmp_scratch_path("godot_ai_dsh_preserve.yaml")
 	_remove_if_exists(path)
 	var seed := (
 		"# my header comment\n"
@@ -3547,7 +3547,7 @@ func test_dsh_strategy_preserves_other_rows() -> void:
 func test_dsh_strategy_reconfigure_preserves_user_fields() -> void:
 	## A user-edited toolCallTimeoutMs inside our entry's config must survive
 	## a reconfigure (the strategy only forces transport/launch fields).
-	var path := _dsh_scratch_path("godot_ai_dsh_userfields.yaml")
+	var path := _tmp_scratch_path("godot_ai_dsh_userfields.yaml")
 	_remove_if_exists(path)
 	var c := _make_test_dsh_client(path)
 	var launch := _test_attach_launch()
@@ -3575,7 +3575,7 @@ func test_dsh_strategy_drift_and_legacy_url() -> void:
 	## A changed port or a legacy `url` key inside the entry must read as
 	## CONFIGURED_MISMATCH — the same drift contract the JSON/TOML/YAML
 	## strategies use.
-	var path := _dsh_scratch_path("godot_ai_dsh_drift.yaml")
+	var path := _tmp_scratch_path("godot_ai_dsh_drift.yaml")
 	_remove_if_exists(path)
 	var c := _make_test_dsh_client(path)
 	var launch := _test_attach_launch()
@@ -3612,7 +3612,7 @@ func test_dsh_plain_row_is_inert_and_migrated() -> void:
 	## A plain `- id: mcp-godot-ai` row only overrides an EXISTING bundle id;
 	## for a new id the loader skips it with a warning, so status must read
 	## NOT_CONFIGURED and Configure must migrate the row to the insert form.
-	var path := _dsh_scratch_path("godot_ai_dsh_plain.yaml")
+	var path := _tmp_scratch_path("godot_ai_dsh_plain.yaml")
 	_remove_if_exists(path)
 	var seed := (
 		"- id: mcp-godot-ai\n"
@@ -3644,27 +3644,86 @@ func test_dsh_plain_row_is_inert_and_migrated() -> void:
 	DirAccess.remove_absolute(path)
 
 
-func test_dsh_strategy_preserves_non_row_top_level_lines() -> void:
-	## A stray top-level scalar (invalid for the loader, but not ours to fix)
-	## must survive configure byte-for-byte — the strategy only ever replaces
-	## its own entry blocks and appends its own row.
-	var path := _dsh_scratch_path("godot_ai_dsh_stray.yaml")
+func test_dsh_strategy_refuses_non_sequence_patch_file() -> void:
+	## dsh requires the patch file to be a top-level sequence. Appending our
+	## `- insert:` row after a mapping would still leave a malformed file, so
+	## Configure must fail closed instead of writing.
+	var path := _tmp_scratch_path("godot_ai_dsh_stray.yaml")
 	_remove_if_exists(path)
 	_write_text(path, "not-a-patch-list: true\n")
 	var c := _make_test_dsh_client(path)
 	var launch := _test_attach_launch()
 	var res := McpDshStrategy.configure(c, "godot-ai", "http://127.0.0.1:8000/mcp", launch)
-	assert_eq(res.get("status", ""), "ok", "configure must report ok: %s" % res.get("message", ""))
+	assert_eq(res.get("status", ""), "error", "configure must reject a non-sequence patch file")
 	var reread := _read_text(path)
-	assert_contains(reread, "not-a-patch-list: true", "unrelated top-level content must survive")
-	assert_contains(reread, "mcp-godot-ai")
+	assert_eq(reread, "not-a-patch-list: true\n", "rejected files must not be modified")
+	DirAccess.remove_absolute(path)
+
+
+func test_dsh_reconfigure_preserves_nested_entry_indent() -> void:
+	## Hand-written patch files may indent nested insert entries with 2
+	## spaces. Reconfigure must reuse that indent instead of forcing 4 spaces
+	## and corrupting the insert sequence shape.
+	var path := _tmp_scratch_path("godot_ai_dsh_indent.yaml")
+	_remove_if_exists(path)
+	var seed := (
+		"- insert:\n"
+		+ "  - id: mcp-godot-ai\n"
+		+ "    name: '@deepseek-ai/dsh-mcp-client'\n"
+		+ "    config:\n"
+		+ "      serverName: godot-ai\n"
+		+ "      transport: stdio\n"
+		+ "      command: old\n"
+		+ "      args: [\"old\"]\n"
+	)
+	_write_text(path, seed)
+	var c := _make_test_dsh_client(path)
+	var res := McpDshStrategy.configure(c, "godot-ai", "http://127.0.0.1:8000/mcp", _test_attach_launch())
+	assert_eq(res.get("status", ""), "ok", "reconfigure must report ok: %s" % res.get("message", ""))
+	var reread := _read_text(path)
+	assert_contains(reread, "\n  - id: mcp-godot-ai\n", "replacement must keep the existing 2-space item indent")
+	assert_false(reread.contains("\n    - id: mcp-godot-ai\n"), "replacement must not force the default 4-space item indent")
+	DirAccess.remove_absolute(path)
+
+
+func test_dsh_remove_preserves_trailing_comments_before_sibling_entry() -> void:
+	## A user comment between our nested entry and the next sibling belongs to
+	## the surrounding insert row, not to our entry. Removing our block must
+	## leave that comment and sibling intact.
+	var path := _tmp_scratch_path("godot_ai_dsh_trailing_comment.yaml")
+	_remove_if_exists(path)
+	var seed := (
+		"- insert:\n"
+		+ "    - id: mcp-godot-ai\n"
+		+ "      name: '@deepseek-ai/dsh-mcp-client'\n"
+		+ "      config:\n"
+		+ "        serverName: godot-ai\n"
+		+ "        transport: stdio\n"
+		+ "        command: old\n"
+		+ "        args: [\"old\"]\n"
+		+ "    # github server owned by the user\n"
+		+ "    - id: mcp-github\n"
+		+ "      name: '@deepseek-ai/dsh-mcp-client'\n"
+		+ "      config:\n"
+		+ "        serverName: github\n"
+		+ "        transport: streamable-http\n"
+		+ "        url: https://mcp.github.com/mcp\n"
+	)
+	_write_text(path, seed)
+	var c := _make_test_dsh_client(path)
+	var res := McpDshStrategy.remove(c, "godot-ai")
+	assert_eq(res.get("status", ""), "ok", "remove must report ok: %s" % res.get("message", ""))
+	var reread := _read_text(path)
+	assert_contains(reread, "# github server owned by the user")
+	assert_contains(reread, "- id: mcp-github")
+	assert_false(reread.contains("mcp-godot-ai"), "our entry must be gone after remove")
 	DirAccess.remove_absolute(path)
 
 
 func test_dsh_manual_command_shows_insert_row() -> void:
 	## The manual-instruction text must render the exact insert row Configure
 	## would write, plus the URL-mode fallback.
-	var path := _dsh_scratch_path("godot_ai_dsh_manual.yaml")
+	var path := _tmp_scratch_path("godot_ai_dsh_manual.yaml")
 	var c := _make_test_dsh_client(path)
 	var manual := McpManualCommand.build(
 		c, "godot-ai", "http://127.0.0.1:8000/mcp", path, _test_attach_launch()
@@ -3691,15 +3750,6 @@ func _make_test_dsh_client(path: String) -> McpClient:
 	c.command_user_fields = PackedStringArray(["env", "toolCallTimeoutMs", "reconnect"])
 	c.command_supports_url_fallback = true
 	return c
-
-
-func _dsh_scratch_path(filename: String) -> String:
-	var dir := OS.get_environment("TMPDIR")
-	if dir.is_empty():
-		dir = OS.get_environment("TEMP")
-	if dir.is_empty():
-		dir = "/tmp"
-	return dir.path_join(filename)
 
 
 func test_opencode_client_uses_home_config_on_windows() -> void:
